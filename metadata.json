@@ -1,0 +1,6 @@
+{
+  "name": "World Cup Prediction Market",
+  "description": "Full-stack real-time prediction market for the World Cup with Privy web3 login, live odds, AI comments, and user portfolios.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

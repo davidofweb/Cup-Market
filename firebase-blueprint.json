@@ -1,0 +1,85 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Represents an authenticated trader profile with their persistent ledger balance.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The unique Firebase Auth identifier." },
+        "displayName": { "type": "string", "description": "User's display name." },
+        "email": { "type": "string", "description": "User's verified email address." },
+        "balance": { "type": "number", "description": "User's real cash account ledger balance in USD." },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "balance", "createdAt"]
+    },
+    "Market": {
+      "title": "Prediction Market",
+      "description": "A single FIFA World Cup outcome prediction contract.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string" },
+        "description": { "type": "string" },
+        "yesPrice": { "type": "number" },
+        "noPrice": { "type": "number" },
+        "initialYesPrice": { "type": "number" },
+        "volume": { "type": "number" },
+        "poolSize": { "type": "number" },
+        "endsAt": { "type": "string", "format": "date-time" },
+        "resolutionStatus": { "type": "string", "enum": ["Active", "Yes", "No"] }
+      },
+      "required": ["id", "title", "category", "description", "yesPrice", "noPrice", "initialYesPrice", "volume", "poolSize", "endsAt", "resolutionStatus"]
+    },
+    "Position": {
+      "title": "User Position",
+      "description": "Represents ownership of shares in a prediction market.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "marketId": { "type": "string" },
+        "marketTitle": { "type": "string" },
+        "outcome": { "type": "string", "enum": ["YES", "NO"] },
+        "shares": { "type": "number" },
+        "averagePrice": { "type": "number" }
+      },
+      "required": ["id", "marketId", "marketTitle", "outcome", "shares", "averagePrice"]
+    },
+    "Trade": {
+      "title": "Trade Transaction Log",
+      "description": "An immutable record of a user buy or sell trade execution.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "marketId": { "type": "string" },
+        "marketTitle": { "type": "string" },
+        "outcome": { "type": "string", "enum": ["YES", "NO"] },
+        "type": { "type": "string", "enum": ["BUY", "SELL"] },
+        "shares": { "type": "number" },
+        "price": { "type": "number" },
+        "totalCost": { "type": "number" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "marketId", "marketTitle", "outcome", "type", "shares", "price", "totalCost", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Root collection for verified user profile ledger states."
+    },
+    "/users/{userId}/positions/{positionId}": {
+      "schema": "Position",
+      "description": "Sub-collection of current active prediction share assets."
+    },
+    "/users/{userId}/trades/{tradeId}": {
+      "schema": "Trade",
+      "description": "Sub-collection of immutable user trade logs."
+    },
+    "/markets/{marketId}": {
+      "schema": "Market",
+      "description": "Root collection of World Cup markets."
+    }
+  }
+}

@@ -1,0 +1,23 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read, write: if true; // Allow client operations for ledger sync and profile tracking
+    }
+    match /markets/{marketId} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /transactions/{txId} {
+      allow read, write: if true;
+    }
+    match /feed/{feedId} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /system/odds_odds {
+      allow read: if true;
+      allow write: if true;
+    }
+  }
+}

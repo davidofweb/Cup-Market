@@ -1,0 +1,41 @@
+{
+  "name": "world-cup-prediction-market",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx server.ts",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "start": "node dist/server.cjs",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+  },
+  "dependencies": {
+    "@google/genai": "latest",
+    "@privy-io/react-auth": "^2.1.2",
+    "express": "^4.19.2",
+    "firebase": "^10.12.0",
+    "firebase-admin": "^12.1.0",
+    "lucide-react": "^0.395.0",
+    "motion": "^11.11.17",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "recharts": "^2.12.7"
+  },
+  "overrides": {
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.1",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.2",
+    "@types/react": "^19.0.1",
+    "@types/react-dom": "^19.0.1",
+    "@vitejs/plugin-react": "^4.3.1",
+    "esbuild": "^0.21.4",
+    "tailwindcss": "^4.3.1",
+    "tsx": "^4.15.1",
+    "typescript": "^5.4.5",
+    "vite": "^6.2.3"
+  }
+}
