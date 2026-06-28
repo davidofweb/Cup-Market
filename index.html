@@ -6,6 +6,37 @@
     <title>World Cup Prediction Market</title>
     <script>
       (function() {
+        // Global error & promise rejection interceptors to capture and mute cross-origin/ethereum check errors early
+        window.addEventListener('error', function(event) {
+          var msg = event.message || "";
+          if (msg && (
+            msg.indexOf("ethereum") !== -1 || 
+            msg.indexOf("cross-origin") !== -1 ||
+            msg.indexOf("SecurityError") !== -1 ||
+            msg.indexOf("Blocked a frame") !== -1
+          )) {
+            console.warn("Intercepted and muted security error:", msg);
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return true;
+          }
+        }, true);
+
+        window.addEventListener('unhandledrejection', function(event) {
+          var msg = (event.reason && event.reason.message) || "";
+          if (msg && (
+            msg.indexOf("ethereum") !== -1 || 
+            msg.indexOf("cross-origin") !== -1 ||
+            msg.indexOf("SecurityError") !== -1 ||
+            msg.indexOf("Blocked a frame") !== -1
+          )) {
+            console.warn("Intercepted and muted security promise rejection:", msg);
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return true;
+          }
+        }, true);
+
         try {
           var originalFetch = window.fetch;
           Object.defineProperty(window, 'fetch', {
@@ -50,8 +81,13 @@
               return realWin;
             } catch (e) {
               // It's cross-origin! Return a safe Proxy representing the parent/top window
-              return new Proxy(realWin, {
+              // We use an empty object {} as the target so that proxy operations never trigger cross-origin errors on the target.
+              return new Proxy({}, {
                 get: function(target, prop) {
+                  if (typeof prop === 'symbol') {
+                    return undefined;
+                  }
+
                   // Only allow safe properties that are cross-origin permissible
                   var safeProps = {
                     postMessage: true,
@@ -76,10 +112,14 @@
 
                   if (prop === 'location') {
                     try {
-                      return target.location;
+                      return realWin.location;
                     } catch (err) {
                       return undefined;
                     }
+                  }
+
+                  if (prop === 'parent' || prop === 'top' || prop === 'window' || prop === 'self') {
+                    return createSafeWindowProxy(realWin[prop]);
                   }
 
                   // If it's a cross-origin forbidden property (like ethereum, ethereum-provider etc.),
@@ -89,7 +129,7 @@
                   }
 
                   try {
-                    return target[prop];
+                    return realWin[prop];
                   } catch (err) {
                     return undefined;
                   }
@@ -97,13 +137,30 @@
                 set: function(target, prop, value) {
                   if (prop === 'location') {
                     try {
-                      target.location = value;
+                      realWin.location = value;
                       return true;
                     } catch (err) {
                       return false;
                     }
                   }
                   return false;
+                },
+                has: function(target, prop) {
+                  var safeProps = {
+                    postMessage: true,
+                    blur: true,
+                    focus: true,
+                    close: true,
+                    frames: true,
+                    length: true,
+                    parent: true,
+                    self: true,
+                    top: true,
+                    window: true,
+                    opener: true,
+                    closed: true
+                  };
+                  return !!safeProps[prop];
                 }
               });
             }
@@ -116,31 +173,47 @@
                          Object.getOwnPropertyDescriptor(window, 'top');
           
           if (descParent && descParent.configurable) {
-            Object.defineProperty(Window.prototype, 'parent', {
+            try {
+              Object.defineProperty(Window.prototype, 'parent', {
+                get: function() { return createSafeWindowProxy(realParent); },
+                configurable: true,
+                enumerable: true
+              });
+            } catch (ep) {
+              console.warn("Could not define parent on Window.prototype:", ep);
+            }
+          }
+          if (descTop && descTop.configurable) {
+            try {
+              Object.defineProperty(Window.prototype, 'top', {
+                get: function() { return createSafeWindowProxy(realTop); },
+                configurable: true,
+                enumerable: true
+              });
+            } catch (et) {
+              console.warn("Could not define top on Window.prototype:", et);
+            }
+          }
+
+          // Also redefine on window directly to ensure absolute precedence
+          try {
+            Object.defineProperty(window, 'parent', {
               get: function() { return createSafeWindowProxy(realParent); },
               configurable: true,
               enumerable: true
             });
+          } catch (ewp) {
+            console.warn("Could not define parent on window directly:", ewp);
           }
-          if (descTop && descTop.configurable) {
-            Object.defineProperty(Window.prototype, 'top', {
+          try {
+            Object.defineProperty(window, 'top', {
               get: function() { return createSafeWindowProxy(realTop); },
               configurable: true,
               enumerable: true
             });
+          } catch (ewt) {
+            console.warn("Could not define top on window directly:", ewt);
           }
-
-          // Also redefine on window directly to ensure absolute precedence
-          Object.defineProperty(window, 'parent', {
-            get: function() { return createSafeWindowProxy(realParent); },
-            configurable: true,
-            enumerable: true
-          });
-          Object.defineProperty(window, 'top', {
-            get: function() { return createSafeWindowProxy(realTop); },
-            configurable: true,
-            enumerable: true
-          });
 
           console.log("Safe window.parent and window.top wrappers successfully installed.");
         } catch (e) {
