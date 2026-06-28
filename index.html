@@ -6,36 +6,126 @@
     <title>World Cup Prediction Market</title>
     <script>
       (function() {
-        // Global error & promise rejection interceptors to capture and mute cross-origin/ethereum check errors early
-        window.addEventListener('error', function(event) {
-          var msg = event.message || "";
-          if (msg && (
-            msg.indexOf("ethereum") !== -1 || 
-            msg.indexOf("cross-origin") !== -1 ||
-            msg.indexOf("SecurityError") !== -1 ||
-            msg.indexOf("Blocked a frame") !== -1
-          )) {
-            console.warn("Intercepted and muted security error:", msg);
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            return true;
-          }
-        }, true);
+        // Define safe proxy getters for window.parent and window.top to shield any cross-origin property reads (like .ethereum)
+        try {
+          var originalParent = window.parent;
+          Object.defineProperty(window, 'parent', {
+            get: function() {
+              try {
+                var temp = originalParent.location.href;
+                return originalParent;
+              } catch (e) {
+                return new Proxy({}, {
+                  get: function(target, prop) {
+                    return undefined;
+                  },
+                  has: function(target, prop) {
+                    return false;
+                  }
+                });
+              }
+            },
+            configurable: true,
+            enumerable: true
+          });
+        } catch (e) {}
 
-        window.addEventListener('unhandledrejection', function(event) {
-          var msg = (event.reason && event.reason.message) || "";
-          if (msg && (
-            msg.indexOf("ethereum") !== -1 || 
-            msg.indexOf("cross-origin") !== -1 ||
-            msg.indexOf("SecurityError") !== -1 ||
-            msg.indexOf("Blocked a frame") !== -1
-          )) {
-            console.warn("Intercepted and muted security promise rejection:", msg);
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            return true;
+        try {
+          var originalTop = window.top;
+          Object.defineProperty(window, 'top', {
+            get: function() {
+              try {
+                var temp = originalTop.location.href;
+                return originalTop;
+              } catch (e) {
+                return new Proxy({}, {
+                  get: function(target, prop) {
+                    return undefined;
+                  },
+                  has: function(target, prop) {
+                    return false;
+                  }
+                });
+              }
+            },
+            configurable: true,
+            enumerable: true
+          });
+        } catch (e) {}
+
+        // Global error & promise rejection interceptors to capture and mute cross-origin/ethereum check errors early
+        var isSecurityError = function(msg) {
+          if (!msg) return false;
+          var m = String(msg).toLowerCase();
+          return m.indexOf("ethereum") !== -1 || 
+                 m.indexOf("cross-origin") !== -1 ||
+                 m.indexOf("securityerror") !== -1 ||
+                 m.indexOf("blocked a frame") !== -1 ||
+                 m.indexOf("property 'ethereum'") !== -1;
+        };
+
+        // Intercept window.onerror to suppress cross-origin / ethereum errors
+        var originalOnerror = window.onerror;
+        Object.defineProperty(window, 'onerror', {
+          get: function() {
+            return function(message, source, lineno, colno, error) {
+              var msg = String(message || "");
+              if (isSecurityError(msg)) {
+                console.warn("Suppressing global error in custom window.onerror:", msg);
+                return true; // suppresses the error
+              }
+              if (originalOnerror) {
+                return originalOnerror.apply(this, arguments);
+              }
+              return false;
+            };
+          },
+          set: function(newHandler) {
+            originalOnerror = newHandler;
+          },
+          configurable: true,
+          enumerable: true
+        });
+
+        // Monkey-patch window.addEventListener & window.removeEventListener to filter out and prevent propagation of these errors
+        var originalAddEventListener = window.addEventListener;
+        window.addEventListener = function(type, listener, options) {
+          if (type === 'error' || type === 'unhandledrejection') {
+            var wrappedListener = function(event) {
+              var msg = "";
+              if (type === 'error') {
+                msg = event.message || (event.error && event.error.message) || "";
+              } else {
+                msg = (event.reason && event.reason.message) || "";
+              }
+              if (isSecurityError(msg)) {
+                console.warn("Intercepted and suppressed error in addEventListener:", msg);
+                try {
+                  event.preventDefault();
+                  event.stopImmediatePropagation();
+                } catch(e) {}
+                return true;
+              }
+              if (listener) {
+                return listener.apply(this, arguments);
+              }
+            };
+            if (listener) {
+              listener._wrapped = wrappedListener;
+            }
+            return originalAddEventListener.call(this, type, wrappedListener, options);
           }
-        }, true);
+          return originalAddEventListener.call(this, type, listener, options);
+        };
+
+        var originalRemoveEventListener = window.removeEventListener;
+        window.removeEventListener = function(type, listener, options) {
+          if (type === 'error' || type === 'unhandledrejection') {
+            var targetListener = listener && listener._wrapped ? listener._wrapped : listener;
+            return originalRemoveEventListener.call(this, type, targetListener, options);
+          }
+          return originalRemoveEventListener.call(this, type, listener, options);
+        };
 
         try {
           var originalFetch = window.fetch;

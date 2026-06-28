@@ -120,87 +120,7 @@ DEFAULT_MARKETS.forEach(m => {
   fallbackDb.markets[m.id] = { ...m };
 });
 
-const DEFAULT_MATCHES = [
-  {
-    id: "match_1",
-    homeTeam: "Brazil",
-    awayTeam: "Argentina",
-    kickoff: "2026-07-12T21:00:00Z",
-    group: "Group A",
-    status: "completed",
-    homeOdds: 1.85,
-    drawOdds: 3.40,
-    awayOdds: 4.20,
-    homeScore: 2,
-    awayScore: 1,
-    result: "home_win",
-    lastUpdated: new Date().toISOString()
-  },
-  {
-    id: "match_2",
-    homeTeam: "France",
-    awayTeam: "England",
-    kickoff: "2026-07-18T18:00:00Z",
-    group: "Knockout Stage",
-    status: "upcoming",
-    homeOdds: 2.10,
-    drawOdds: 3.25,
-    awayOdds: 3.10,
-    homeScore: undefined,
-    awayScore: undefined,
-    result: null,
-    lastUpdated: new Date().toISOString()
-  },
-  {
-    id: "match_3",
-    homeTeam: "USA",
-    awayTeam: "Netherlands",
-    kickoff: "2026-07-10T19:00:00Z",
-    group: "Group B",
-    status: "live",
-    homeOdds: 2.80,
-    drawOdds: 3.10,
-    awayOdds: 2.45,
-    homeScore: 1,
-    awayScore: 1,
-    result: null,
-    lastUpdated: new Date().toISOString()
-  },
-  {
-    id: "match_4",
-    homeTeam: "Germany",
-    awayTeam: "Spain",
-    kickoff: "2026-07-15T20:00:00Z",
-    group: "Group C",
-    status: "upcoming",
-    homeOdds: 2.30,
-    drawOdds: 3.30,
-    awayOdds: 2.80,
-    homeScore: undefined,
-    awayScore: undefined,
-    result: null,
-    lastUpdated: new Date().toISOString()
-  },
-  {
-    id: "match_5",
-    homeTeam: "Portugal",
-    awayTeam: "Italy",
-    kickoff: "2026-07-16T17:00:00Z",
-    group: "Group D",
-    status: "upcoming",
-    homeOdds: 2.40,
-    drawOdds: 3.20,
-    awayOdds: 2.70,
-    homeScore: undefined,
-    awayScore: undefined,
-    result: null,
-    lastUpdated: new Date().toISOString()
-  }
-];
-
-DEFAULT_MATCHES.forEach(match => {
-  fallbackDb.matches[match.id] = { ...match };
-});
+const DEFAULT_MATCHES: any[] = [];
 
 fallbackDb.feed.push({
   id: "f1",
@@ -376,140 +296,73 @@ const startServer = async () => {
   // Helper to fetch live matches from TXODDS or fallback simulator
   const syncTXODDSData = async () => {
     const apiKey = process.env.TXODDS_API_KEY;
-    let fetchedMatches: any[] = [];
-
-    if (apiKey) {
-      try {
-        console.log("Attempting live connection to TXODDS API...");
-        const res = await fetch(`https://api.txodds.com/v1/fixtures?api_key=${apiKey}&league=world-cup-2026`, {
-          headers: { "Accept": "application/json" }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          fetchedMatches = (data.fixtures || []).map((f: any) => ({
-            id: f.id || `tx_${f.match_id}`,
-            homeTeam: f.home_team_name || f.homeTeam,
-            awayTeam: f.away_team_name || f.awayTeam,
-            kickoff: f.kickoff_time || f.date || new Date().toISOString(),
-            group: f.group_name || f.group || "Group Stage",
-            status: f.status === "FT" || f.status === "completed" ? "completed" : (f.status === "live" || f.status === "HT" ? "live" : "upcoming"),
-            homeOdds: Number(f.odds?.home || f.homeOdds || 2.0),
-            drawOdds: Number(f.odds?.draw || f.drawOdds || 3.0),
-            awayOdds: Number(f.odds?.away || f.awayOdds || 3.0),
-            homeScore: f.scores?.home !== undefined ? Number(f.scores.home) : undefined,
-            awayScore: f.scores?.away !== undefined ? Number(f.scores.away) : undefined,
-            result: f.result || (f.scores?.home > f.scores?.away ? "home_win" : f.scores?.home < f.scores?.away ? "away_win" : f.scores ? "draw" : null),
-            lastUpdated: new Date().toISOString()
-          }));
-        } else {
-          console.warn("TXODDS API server returned error status:", res.status);
-        }
-      } catch (err) {
-        console.error("TXODDS API connection error:", err);
-      }
+    if (!apiKey) {
+      throw new Error("TXODDS feed is offline (api key is absent). Simulation is disabled.");
     }
 
-    // Fallback/Simulated sync if API isn't configured or failed to fetch
-    if (fetchedMatches.length === 0) {
-      console.log("Performing dynamic simulated TXODDS sync.");
-      // Read current matches
-      let currentMatches: any[] = [];
+    try {
+      console.log("Attempting live connection to TXODDS API...");
+      const res = await fetch(`https://api.txodds.com/v1/fixtures?api_key=${apiKey}&league=world-cup-2026`, {
+        headers: { "Accept": "application/json" }
+      });
+      if (!res.ok) {
+        throw new Error(`TXODDS status: offline (code ${res.status})`);
+      }
+      const data = await res.json();
+      const fetchedMatches = (data.fixtures || []).map((f: any) => ({
+        id: f.id || `tx_${f.match_id}`,
+        homeTeam: f.home_team_name || f.homeTeam,
+        awayTeam: f.away_team_name || f.awayTeam,
+        kickoff: f.kickoff_time || f.date || new Date().toISOString(),
+        group: f.group_name || f.group || "Group Stage",
+        status: f.status === "FT" || f.status === "completed" ? "completed" : (f.status === "live" || f.status === "HT" ? "live" : "upcoming"),
+        homeOdds: Number(f.odds?.home || f.homeOdds || 2.0),
+        drawOdds: Number(f.odds?.draw || f.drawOdds || 3.0),
+        awayOdds: Number(f.odds?.away || f.awayOdds || 3.0),
+        homeScore: f.scores?.home !== undefined ? Number(f.scores.home) : undefined,
+        awayScore: f.scores?.away !== undefined ? Number(f.scores.away) : undefined,
+        result: f.result || (f.scores?.home > f.scores?.away ? "home_win" : f.scores?.home < f.scores?.away ? "away_win" : f.scores ? "draw" : null),
+        lastUpdated: new Date().toISOString()
+      }));
+
+      // Persist matches back to Firestore or in-memory fallback
       try {
         if (useCloudFirestore) {
-          const snapshot = await db.collection("matches").get();
-          snapshot.forEach((doc: any) => {
-            currentMatches.push({ id: doc.id, ...doc.data() });
+          const batch = db.batch();
+          fetchedMatches.forEach((m) => {
+            const docRef = db.collection("matches").doc(m.id);
+            batch.set(docRef, m, { merge: true });
           });
+          await batch.commit();
         } else {
-          currentMatches = Object.values(fallbackDb.matches);
+          fetchedMatches.forEach((m) => {
+            fallbackDb.matches[m.id] = m;
+          });
         }
       } catch (err) {
-        console.error("Failed to read matches collection, utilizing seeds:", err);
+        // Safe skip
       }
 
-      if (currentMatches.length === 0) {
-        currentMatches = JSON.parse(JSON.stringify(DEFAULT_MATCHES));
-      }
-
-      // Fluctuated or evolved states
-      fetchedMatches = currentMatches.map((match: any) => {
-        let status = match.status;
-        let homeOdds = Number(match.homeOdds || 2.00);
-        let drawOdds = Number(match.drawOdds || 3.00);
-        let awayOdds = Number(match.awayOdds || 3.00);
-        let homeScore = match.homeScore;
-        let awayScore = match.awayScore;
-        let result = match.result;
-
-        // If live, randomly update score or complete the match
-        if (status === "live") {
-          const rand = Math.random();
-          if (rand < 0.2) {
-            // GOAL!
-            homeScore = (homeScore !== undefined ? homeScore : 0) + (Math.random() > 0.5 ? 1 : 0);
-            awayScore = (awayScore !== undefined ? awayScore : 0) + (Math.random() > 0.5 ? 0 : 1);
-            // Adjust live odds dynamically based on new scores
-            homeOdds = Number(Math.max(1.10, homeOdds + (homeScore > awayScore ? -0.4 : 0.4)).toFixed(2));
-            awayOdds = Number(Math.max(1.10, awayOdds + (awayScore > homeScore ? -0.4 : 0.4)).toFixed(2));
-          } else if (rand < 0.35) {
-            // Complete the match
-            status = "completed";
-            result = homeScore! > awayScore! ? "home_win" : homeScore! < awayScore! ? "away_win" : "draw";
-            
-            // Auto resolve prediction market & user predictions!
-            resolvePredictionMarketFromMatch(match.id, result);
-            resolveUserPredictionsFromMatch(match.id, result);
-          }
-        } else if (status === "upcoming") {
-          // Subtle line adjustments
-          const change = (Math.random() * 0.30 - 0.15);
-          homeOdds = Number(Math.min(Math.max(homeOdds + change, 1.10), 8.0).toFixed(2));
-          awayOdds = Number(Math.min(Math.max(awayOdds - change, 1.10), 8.0).toFixed(2));
-          
-          // Small chance an upcoming match goes live!
-          if (Math.random() < 0.1) {
-            status = "live";
-            homeScore = 0;
-            awayScore = 0;
-          }
-        }
-
-        return {
-          ...match,
-          status,
-          homeOdds,
-          drawOdds,
-          awayOdds,
-          homeScore,
-          awayScore,
-          result,
-          lastUpdated: new Date().toISOString()
-        };
-      });
+      return fetchedMatches;
+    } catch (err: any) {
+      console.log("TXODDS status: offline (unreachable or off). Simulation is disabled.");
+      throw new Error("TXODDS feed is offline (unreachable). Simulation is disabled.");
     }
-
-    // Persist matches back to Firestore or in-memory fallback
-    try {
-      if (useCloudFirestore) {
-        const batch = db.batch();
-        fetchedMatches.forEach((m) => {
-          const docRef = db.collection("matches").doc(m.id);
-          batch.set(docRef, m, { merge: true });
-        });
-        await batch.commit();
-      } else {
-        fetchedMatches.forEach((m) => {
-          fallbackDb.matches[m.id] = m;
-        });
-      }
-    } catch (err) {
-      console.error("Failed to write synced matches to db, returning local copies:", err);
-    }
-
-    return fetchedMatches;
   };
 
   // --- API ROUTES ---
+
+  // TXODDS Endpoint: Get connection and configuration status
+  app.get("/api/txodds/status", (req, res) => {
+    const apiKey = process.env.TXODDS_API_KEY;
+    res.json({
+      configured: !!apiKey,
+      status: apiKey ? "online" : "offline",
+      message: apiKey 
+        ? "TXODDS live API key is configured. Ready to fetch real-time fixtures." 
+        : "TXODDS_API_KEY environment variable is absent. Simulation of live sandbox matches is disabled."
+    });
+  });
 
   // TXODDS Endpoint: Get all matches & schedule
   app.get("/api/txodds/matches", async (req, res) => {
@@ -523,18 +376,28 @@ const startServer = async () => {
 
         if (list.length === 0) {
           // Sync/Seed on empty
-          list = await syncTXODDSData();
+          try {
+            list = await syncTXODDSData();
+          } catch (se: any) {
+            console.log("Seed TXODDS matches skipped/offline:", se.message);
+            list = [];
+          }
         }
       } else {
         list = Object.values(fallbackDb.matches);
         if (list.length === 0) {
-          list = await syncTXODDSData();
+          try {
+            list = await syncTXODDSData();
+          } catch (se: any) {
+            console.log("Seed TXODDS matches skipped/offline:", se.message);
+            list = [];
+          }
         }
       }
       res.json(list);
     } catch (err: any) {
-      console.error("TXODDS matches fetch failed:", err);
-      res.status(500).json({ error: "Failed to load TXODDS matches", details: err.message });
+      console.log("TXODDS matches fetch status:", err.message || err);
+      res.json([]);
     }
   });
 
@@ -544,8 +407,8 @@ const startServer = async () => {
       const synced = await syncTXODDSData();
       res.json({ success: true, message: "TXODDS World Cup data feed synchronized successfully.", count: synced?.length || 0, matches: synced });
     } catch (err: any) {
-      console.error("TXODDS sync endpoint failed:", err);
-      res.status(500).json({ error: "Failed to trigger TXODDS synchronization", details: err.message });
+      console.log("TXODDS sync endpoint status:", err.message || err);
+      res.status(503).json({ error: "Failed to trigger TXODDS synchronization", details: err.message });
     }
   });
 
@@ -1333,62 +1196,7 @@ const startServer = async () => {
     }
   });
 
-  // 9. Simulated TxOdds Dynamic Feed line updates (triggerable via background timer)
-  const triggerSimulatedOddsShift = async () => {
-    try {
-      const keys = useCloudFirestore ? await db.collection("markets").get() : { forEach: (cb: any) => Object.values(fallbackDb.markets).forEach(cb) };
-      const list: any[] = [];
-      keys.forEach((doc: any) => {
-        const data = useCloudFirestore ? doc.data() : doc;
-        const id = useCloudFirestore ? doc.id : data.id;
-        if (data.status === "open" && data.txOddsFeed) {
-          list.push({ id, ...data });
-        }
-      });
 
-      if (list.length === 0) return;
-
-      const randomMarket = list[Math.floor(Math.random() * list.length)];
-      
-      // Calculate random subtle fluctuations (+/- 0.05 to 0.15)
-      const change = (Math.random() * 0.20 - 0.10);
-      const newYesOdds = Math.min(Math.max(Number((randomMarket.yesOdds + change).toFixed(2)), 1.10), 10.0);
-      const newNoOdds = Math.min(Math.max(Number((randomMarket.noOdds - change).toFixed(2)), 1.10), 10.0);
-
-      if (useCloudFirestore) {
-        await db.collection("markets").doc(randomMarket.id).update({
-          yesOdds: newYesOdds,
-          noOdds: newNoOdds
-        });
-      } else {
-        if (fallbackDb.markets[randomMarket.id]) {
-          fallbackDb.markets[randomMarket.id].yesOdds = newYesOdds;
-          fallbackDb.markets[randomMarket.id].noOdds = newNoOdds;
-        }
-      }
-
-      // Append to live feed
-      const feedItem = {
-        id: `f_odds_${Date.now()}`,
-        marketId: randomMarket.id,
-        marketTitle: randomMarket.title,
-        type: "odds_update",
-        message: `⚡ Live TxOdds update! Lines shifted on [${randomMarket.title}]: YES contract: ${(1/newYesOdds).toFixed(2)} (odds ${newYesOdds}), NO contract: ${(1/newNoOdds).toFixed(2)} (odds ${newNoOdds}).`,
-        timestamp: new Date().toISOString()
-      };
-
-      if (useCloudFirestore) {
-        await db.collection("feed").doc(feedItem.id).set(feedItem);
-      } else {
-        fallbackDb.feed.unshift(feedItem);
-      }
-    } catch (err) {
-      console.warn("TxOdds Simulation update failed:", err);
-    }
-  };
-
-  // Run dynamic feed updater every 20 seconds to simulate full-blooded prediction exchange action!
-  setInterval(triggerSimulatedOddsShift, 20000);
 
 
   // --- VITE MIDDLEWARE SETUP ---

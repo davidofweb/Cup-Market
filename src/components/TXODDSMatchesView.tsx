@@ -23,6 +23,7 @@ interface TXODDSMatchesViewProps {
   user: CustomUser | null;
   userPredictions: MatchPrediction[];
   onPredict: (matchId: string, prediction: "yes" | "no") => Promise<void>;
+  feedError?: string | null;
 }
 
 export default function TXODDSMatchesView({
@@ -32,7 +33,8 @@ export default function TXODDSMatchesView({
   onSelectMarket,
   user,
   userPredictions,
-  onPredict
+  onPredict,
+  feedError
 }: TXODDSMatchesViewProps) {
   const [filter, setFilter] = useState<"all" | "upcoming" | "live" | "completed">("all");
   const [isSyncing, setIsSyncing] = useState(false);
@@ -136,6 +138,21 @@ export default function TXODDSMatchesView({
         <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl flex items-center gap-3 text-rose-400 text-xs text-left">
           <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
           <span>{error}</span>
+        </div>
+      )}
+
+      {feedError && (
+        <div className="p-5 bg-rose-500/5 border border-rose-500/10 rounded-2xl text-left space-y-3">
+          <div className="flex items-center gap-2.5 text-rose-400">
+            <AlertCircle className="w-5 h-5 shrink-0" />
+            <h4 className="text-sm font-extrabold uppercase tracking-wide font-sans">TXODDS Live API Connection Status</h4>
+          </div>
+          <p className="text-xs text-zinc-400 leading-relaxed font-semibold">
+            {feedError}
+          </p>
+          <div className="text-[10px] text-rose-400/80 font-mono font-bold bg-zinc-950 border border-zinc-900 p-2.5 rounded-xl">
+            STATUS: OFFLINE / CONFIGURATION REQUIRED | SIMULATION: DISABLED
+          </div>
         </div>
       )}
 

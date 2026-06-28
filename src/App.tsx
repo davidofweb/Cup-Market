@@ -26,6 +26,7 @@ export default function App() {
   const [markets, setMarkets] = useState<Market[]>([]);
   const [txoddsMatches, setTxoddsMatches] = useState<TXODDSMatch[]>([]);
   const [isMatchesLoading, setIsMatchesLoading] = useState<boolean>(false);
+  const [txOddsError, setTxOddsError] = useState<string | null>(null);
   const [marketSubTab, setMarketSubTab] = useState<"contracts" | "txodds">("contracts");
   const [selectedMarketId, setSelectedMarketId] = useState<string | null>(null);
   const [userBalance, setUserBalance] = useState<number>(10000);
@@ -77,14 +78,19 @@ export default function App() {
         body: JSON.stringify(userData)
       });
       if (response.ok) {
-        const synced = await response.json();
-        setUser({
-          uid: synced.uid,
-          displayName: synced.displayName,
-          email: synced.email
-        });
-        setUserBalance(synced.balance);
-        setPortfolioValue(synced.portfolioValue);
+        try {
+          const synced = await safeParseJson(response);
+          setUser({
+            uid: synced.uid,
+            displayName: synced.displayName,
+            email: synced.email
+          });
+          setUserBalance(synced.balance);
+          setPortfolioValue(synced.portfolioValue);
+        } catch (parseErr: any) {
+          console.error("Failed to parse ledger sync response:", parseErr.message);
+          setUser(userData);
+        }
       } else {
         setUser(userData);
       }
@@ -96,53 +102,146 @@ export default function App() {
     }
   };
 
+  // Helper to safely parse JSON response, detecting HTML fallback pages (Vite SPA wildcards) and returning user-friendly messages
+  const safeParseJson = async (res: Response, fallbackDescription = "API request failed") => {
+    const contentType = res.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error(`The server returned an invalid format (non-JSON). The backend may be offline or restarting.`);
+    }
+    const text = await res.text();
+    if (text.trim().startsWith("<")) {
+      throw new Error(`The server returned an HTML document instead of data. The backend may be offline or restarting.`);
+    }
+    try {
+      return JSON.parse(text);
+    } catch (e) {
+      throw new Error(`Failed to parse response as JSON.`);
+    }
+  };
+
   // 2. Fetch Global Markets, Feeds, and Leaderboard data
   const fetchData = async () => {
     try {
-      const [marketsRes, feedRes, leaderboardRes, matchesRes] = await Promise.all([
-        fetch("/api/markets"),
-        fetch("/api/feed"),
-        fetch("/api/leaderboard"),
-        fetch("/api/txodds/matches")
+      const [marketsRes, feedRes, leaderboardRes, matchesRes, statusRes] = await Promise.all([
+        fetch("/api/markets").catch(() => null),
+        fetch("/api/feed").catch(() => null),
+        fetch("/api/leaderboard").catch(() => null),
+        fetch("/api/txodds/matches").catch(() => null),
+        fetch("/api/txodds/status").catch(() => null)
       ]);
 
-      if (marketsRes.ok) {
-        const data = await marketsRes.json();
-        setMarkets(data);
+      if (marketsRes && marketsRes.ok) {
+        try {
+          const data = await safeParseJson(marketsRes);
+          setMarkets(data);
+        } catch (err: any) {
+          console.warn("Error parsing markets:", err.message);
+        }
       }
-      if (feedRes.ok) {
-        const data = await feedRes.json();
-        setFeedItems(data);
+
+      if (feedRes && feedRes.ok) {
+        try {
+          const data = await safeParseJson(feedRes);
+          setFeedItems(data);
+        } catch (err: any) {
+          console.warn("Error parsing feed items:", err.message);
+        }
       }
-      if (leaderboardRes.ok) {
-        const data = await leaderboardRes.json();
-        setLeaderboard(data);
+
+      if (leaderboardRes && leaderboardRes.ok) {
+        try {
+          const data = await safeParseJson(leaderboardRes);
+          setLeaderboard(data);
+        } catch (err: any) {
+          console.warn("Error parsing leaderboard:", err.message);
+        }
       }
-      if (matchesRes.ok) {
-        const data = await matchesRes.json();
-        setTxoddsMatches(data);
+
+      // Check TXODDS service state first
+      let statusConfigured = false;
+      let statusMsg = "TXODDS feed is offline (configuration required).";
+
+      if (statusRes && statusRes.ok) {
+        try {
+          const statusData = await safeParseJson(statusRes);
+          statusConfigured = !!statusData.configured;
+          statusMsg = statusData.message || "TXODDS configuration state offline.";
+          
+          if (!statusConfigured) {
+            setTxOddsError(statusMsg);
+          } else {
+            setTxOddsError(null);
+          }
+        } catch (err: any) {
+          console.warn("Error parsing TXODDS status:", err.message);
+          setTxOddsError("TXODDS configuration interface is currently loading or offline.");
+        }
+      } else {
+        setTxOddsError("Unable to verify TXODDS server configuration.");
       }
-    } catch (err) {
+
+      // Handle matches list retrieval
+      if (matchesRes && matchesRes.ok) {
+        try {
+          const data = await safeParseJson(matchesRes);
+          setTxoddsMatches(data);
+        } catch (err: any) {
+          console.warn("Error parsing matches data:", err.message);
+          if (!statusConfigured) {
+            setTxOddsError(statusMsg);
+          } else {
+            setTxOddsError("Failed to decode live sports data feed.");
+          }
+        }
+      } else {
+        if (!statusConfigured) {
+          setTxOddsError(statusMsg);
+        } else if (matchesRes) {
+          try {
+            const errData = await safeParseJson(matchesRes);
+            setTxOddsError(errData.details || errData.error || "TXODDS Live API connection failed.");
+          } catch (e) {
+            setTxOddsError("TXODDS Live API returned a non-JSON or offline status response.");
+          }
+        } else {
+          setTxOddsError("TXODDS Live API connection is unavailable (network error).");
+        }
+      }
+    } catch (err: any) {
       console.error("Data synchronization error:", err);
+      setTxOddsError(err.message || "Failed to establish server feed connection.");
     }
   };
 
   // Sync TXODDS live feeds manually
   const handleSyncTXODDS = async () => {
     setIsMatchesLoading(true);
+    setTxOddsError(null);
     try {
       const response = await fetch("/api/txodds/sync", {
         method: "POST"
       });
       if (response.ok) {
-        const data = await response.json();
-        setTxoddsMatches(data.matches || []);
-        // Instantly reload general stats & events
-        await fetchData();
+        try {
+          const data = await safeParseJson(response);
+          setTxoddsMatches(data.matches || []);
+          setTxOddsError(null);
+          // Instantly reload general stats & events
+          await fetchData();
+        } catch (parseErr: any) {
+          setTxOddsError(parseErr.message || "Unable to parse synchronized TXODDS feed.");
+        }
+      } else {
+        try {
+          const errData = await safeParseJson(response);
+          setTxOddsError(errData.details || errData.error || "TXODDS Feed synchronization failed.");
+        } catch (e) {
+          setTxOddsError("Synchronization server returned a non-JSON response.");
+        }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to sync TXODDS feed:", err);
-      throw err;
+      setTxOddsError(err.message || "Network exception while synchronizing TXODDS lines.");
     } finally {
       setIsMatchesLoading(false);
     }
@@ -154,11 +253,15 @@ export default function App() {
     try {
       const response = await fetch(`/api/users/${user.uid}/portfolio`);
       if (response.ok) {
-        const data = await response.json();
-        setUserBalance(data.user.balance);
-        setPortfolioValue(data.user.portfolioValue);
-        setPositions(data.positions);
-        setTransactions(data.transactions);
+        try {
+          const data = await safeParseJson(response);
+          setUserBalance(data.user.balance);
+          setPortfolioValue(data.user.portfolioValue);
+          setPositions(data.positions);
+          setTransactions(data.transactions);
+        } catch (err: any) {
+          console.warn("Failed to parse user portfolio data:", err.message);
+        }
       }
     } catch (err) {
       console.error("Fetch portfolio failure:", err);
@@ -171,8 +274,12 @@ export default function App() {
     try {
       const response = await fetch(`/api/txodds/user-predictions/${user.uid}`);
       if (response.ok) {
-        const data = await response.json();
-        setUserPredictions(data);
+        try {
+          const data = await safeParseJson(response);
+          setUserPredictions(data);
+        } catch (err: any) {
+          console.warn("Failed to parse user predictions:", err.message);
+        }
       }
     } catch (err) {
       console.error("Failed to fetch user predictions:", err);
@@ -198,8 +305,12 @@ export default function App() {
         await fetchUserPortfolio();
         await fetchData();
       } else {
-        const errData = await response.json();
-        throw new Error(errData.error || "Failed to submit prediction");
+        let errMsg = "Failed to submit prediction";
+        try {
+          const errData = await safeParseJson(response);
+          errMsg = errData.error || errMsg;
+        } catch (e) {}
+        throw new Error(errMsg);
       }
     } catch (err) {
       console.error("Prediction submission failed:", err);
@@ -243,8 +354,12 @@ export default function App() {
     });
 
     if (!response.ok) {
-      const errData = await response.json();
-      throw new Error(errData.error || "Execution settlement failure");
+      let errMsg = "Execution settlement failure";
+      try {
+        const errData = await safeParseJson(response);
+        errMsg = errData.error || errMsg;
+      } catch (e) {}
+      throw new Error(errMsg);
     }
 
     // Refresh instantly
@@ -276,8 +391,12 @@ export default function App() {
     });
 
     if (!response.ok) {
-      const errData = await response.json();
-      throw new Error(errData.error || "Sell order failed to settle.");
+      let errMsg = "Sell order failed to settle.";
+      try {
+        const errData = await safeParseJson(response);
+        errMsg = errData.error || errMsg;
+      } catch (e) {}
+      throw new Error(errMsg);
     }
 
     await Promise.all([fetchData(), fetchUserPortfolio()]);
@@ -301,7 +420,12 @@ export default function App() {
       // Reload timeline instantly
       const updatedFeed = await fetch("/api/feed");
       if (updatedFeed.ok) {
-        setFeedItems(await updatedFeed.json());
+        try {
+          const feedData = await safeParseJson(updatedFeed);
+          setFeedItems(feedData);
+        } catch (err: any) {
+          console.warn("Failed to parse feed updates:", err.message);
+        }
       }
     }
   };
@@ -315,9 +439,13 @@ export default function App() {
         method: "POST"
       });
       if (response.ok) {
-        const data = await response.json();
-        // Update local market analytics instantly
-        setMarkets(prev => prev.map(m => m.id === selectedMarketId ? { ...m, aiAnalysis: data.analysis } : m));
+        try {
+          const data = await safeParseJson(response);
+          // Update local market analytics instantly
+          setMarkets(prev => prev.map(m => m.id === selectedMarketId ? { ...m, aiAnalysis: data.analysis } : m));
+        } catch (parseErr: any) {
+          console.error("Failed to parse quant analysis response:", parseErr.message);
+        }
       }
     } catch (err) {
       console.error("Quantitative formulation failed:", err);
@@ -479,6 +607,7 @@ export default function App() {
                     user={user}
                     userPredictions={userPredictions}
                     onPredict={handlePredict}
+                    feedError={txOddsError}
                   />
                 )}
               </div>
