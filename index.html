@@ -4,6 +4,150 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>World Cup Prediction Market</title>
+    <script>
+      (function() {
+        try {
+          var originalFetch = window.fetch;
+          Object.defineProperty(window, 'fetch', {
+            get: function() {
+              return originalFetch;
+            },
+            set: function(val) {
+              originalFetch = val;
+            },
+            configurable: true,
+            enumerable: true
+          });
+          console.log("Successfully defined writable window.fetch proxy");
+        } catch (e) {
+          console.warn("Failed to redefine window.fetch directly, trying prototype:", e);
+          try {
+            var proto = Object.getPrototypeOf(window);
+            if (proto && proto.hasOwnProperty('fetch')) {
+              Object.defineProperty(proto, 'fetch', {
+                get: function() { return originalFetch; },
+                set: function(val) { originalFetch = val; },
+                configurable: true,
+                enumerable: true
+              });
+              console.log("Successfully defined writable fetch on Window prototype");
+            }
+          } catch (err) {
+            console.error("Failed to patch window.fetch setter:", err);
+          }
+        }
+
+        // Safe window.parent & window.top wrapper to prevent cross-origin frame access errors (e.g., wallet/ethereum check)
+        try {
+          var realParent = window.parent;
+          var realTop = window.top;
+
+          function createSafeWindowProxy(realWin) {
+            if (!realWin) return window;
+            try {
+              // Test if we can read location.href to detect cross-origin blocks
+              var test = realWin.location.href;
+              return realWin;
+            } catch (e) {
+              // It's cross-origin! Return a safe Proxy representing the parent/top window
+              return new Proxy(realWin, {
+                get: function(target, prop) {
+                  // Only allow safe properties that are cross-origin permissible
+                  var safeProps = {
+                    postMessage: true,
+                    blur: true,
+                    focus: true,
+                    close: true,
+                    frames: true,
+                    length: true,
+                    parent: true,
+                    self: true,
+                    top: true,
+                    window: true,
+                    opener: true,
+                    closed: true
+                  };
+
+                  if (prop === 'postMessage') {
+                    return function() {
+                      return realWin.postMessage.apply(realWin, arguments);
+                    };
+                  }
+
+                  if (prop === 'location') {
+                    try {
+                      return target.location;
+                    } catch (err) {
+                      return undefined;
+                    }
+                  }
+
+                  // If it's a cross-origin forbidden property (like ethereum, ethereum-provider etc.),
+                  // return undefined immediately to prevent the browser from logging/throwing cross-origin exceptions.
+                  if (!safeProps[prop]) {
+                    return undefined;
+                  }
+
+                  try {
+                    return target[prop];
+                  } catch (err) {
+                    return undefined;
+                  }
+                },
+                set: function(target, prop, value) {
+                  if (prop === 'location') {
+                    try {
+                      target.location = value;
+                      return true;
+                    } catch (err) {
+                      return false;
+                    }
+                  }
+                  return false;
+                }
+              });
+            }
+          }
+
+          // Redefine on Window.prototype if available
+          var descParent = Object.getOwnPropertyDescriptor(Window.prototype, 'parent') || 
+                            Object.getOwnPropertyDescriptor(window, 'parent');
+          var descTop = Object.getOwnPropertyDescriptor(Window.prototype, 'top') || 
+                         Object.getOwnPropertyDescriptor(window, 'top');
+          
+          if (descParent && descParent.configurable) {
+            Object.defineProperty(Window.prototype, 'parent', {
+              get: function() { return createSafeWindowProxy(realParent); },
+              configurable: true,
+              enumerable: true
+            });
+          }
+          if (descTop && descTop.configurable) {
+            Object.defineProperty(Window.prototype, 'top', {
+              get: function() { return createSafeWindowProxy(realTop); },
+              configurable: true,
+              enumerable: true
+            });
+          }
+
+          // Also redefine on window directly to ensure absolute precedence
+          Object.defineProperty(window, 'parent', {
+            get: function() { return createSafeWindowProxy(realParent); },
+            configurable: true,
+            enumerable: true
+          });
+          Object.defineProperty(window, 'top', {
+            get: function() { return createSafeWindowProxy(realTop); },
+            configurable: true,
+            enumerable: true
+          });
+
+          console.log("Safe window.parent and window.top wrappers successfully installed.");
+        } catch (e) {
+          console.warn("Failed to redefine window wrappers:", e);
+        }
+      })();
+    </script>
   </head>
   <body class="bg-zinc-950 text-zinc-50 font-sans antialiased">
     <div id="root"></div>

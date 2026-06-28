@@ -9,7 +9,8 @@ import MarketDetail from "./components/MarketDetail";
 import PortfolioView from "./components/Portfolio";
 import LiveFeed from "./components/LiveFeed";
 import Leaderboard from "./components/Leaderboard";
-import { CustomUser, Market, Position, Transaction, FeedItem, LeaderboardUser } from "./types";
+import TXODDSMatchesView from "./components/TXODDSMatchesView";
+import { CustomUser, Market, Position, Transaction, FeedItem, LeaderboardUser, TXODDSMatch, MatchPrediction } from "./types";
 import { Trophy, HelpCircle, Loader2 } from "lucide-react";
 
 export default function App() {
@@ -23,6 +24,9 @@ export default function App() {
 
   // Data States
   const [markets, setMarkets] = useState<Market[]>([]);
+  const [txoddsMatches, setTxoddsMatches] = useState<TXODDSMatch[]>([]);
+  const [isMatchesLoading, setIsMatchesLoading] = useState<boolean>(false);
+  const [marketSubTab, setMarketSubTab] = useState<"contracts" | "txodds">("contracts");
   const [selectedMarketId, setSelectedMarketId] = useState<string | null>(null);
   const [userBalance, setUserBalance] = useState<number>(10000);
   const [portfolioValue, setPortfolioValue] = useState<number>(10000);
@@ -30,6 +34,7 @@ export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>([]);
+  const [userPredictions, setUserPredictions] = useState<MatchPrediction[]>([]);
   
   // Interaction state
   const [isGeneratingAI, setIsGeneratingAI] = useState<boolean>(false);
@@ -94,10 +99,11 @@ export default function App() {
   // 2. Fetch Global Markets, Feeds, and Leaderboard data
   const fetchData = async () => {
     try {
-      const [marketsRes, feedRes, leaderboardRes] = await Promise.all([
+      const [marketsRes, feedRes, leaderboardRes, matchesRes] = await Promise.all([
         fetch("/api/markets"),
         fetch("/api/feed"),
-        fetch("/api/leaderboard")
+        fetch("/api/leaderboard"),
+        fetch("/api/txodds/matches")
       ]);
 
       if (marketsRes.ok) {
@@ -112,8 +118,33 @@ export default function App() {
         const data = await leaderboardRes.json();
         setLeaderboard(data);
       }
+      if (matchesRes.ok) {
+        const data = await matchesRes.json();
+        setTxoddsMatches(data);
+      }
     } catch (err) {
       console.error("Data synchronization error:", err);
+    }
+  };
+
+  // Sync TXODDS live feeds manually
+  const handleSyncTXODDS = async () => {
+    setIsMatchesLoading(true);
+    try {
+      const response = await fetch("/api/txodds/sync", {
+        method: "POST"
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setTxoddsMatches(data.matches || []);
+        // Instantly reload general stats & events
+        await fetchData();
+      }
+    } catch (err) {
+      console.error("Failed to sync TXODDS feed:", err);
+      throw err;
+    } finally {
+      setIsMatchesLoading(false);
     }
   };
 
@@ -134,14 +165,61 @@ export default function App() {
     }
   };
 
+  // Fetch match predictions submitted by user
+  const fetchUserPredictions = async () => {
+    if (!user) return;
+    try {
+      const response = await fetch(`/api/txodds/user-predictions/${user.uid}`);
+      if (response.ok) {
+        const data = await response.json();
+        setUserPredictions(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch user predictions:", err);
+    }
+  };
+
+  // Submit a Yes/No prediction on a match outcome
+  const handlePredict = async (matchId: string, prediction: "yes" | "no") => {
+    if (!user) return;
+    try {
+      const response = await fetch("/api/txodds/predict", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user.uid,
+          matchId,
+          prediction
+        })
+      });
+      if (response.ok) {
+        // Refresh prediction states and user portfolio balances
+        await fetchUserPredictions();
+        await fetchUserPortfolio();
+        await fetchData();
+      } else {
+        const errData = await response.json();
+        throw new Error(errData.error || "Failed to submit prediction");
+      }
+    } catch (err) {
+      console.error("Prediction submission failed:", err);
+      throw err;
+    }
+  };
+
   // Run data polling every 4 seconds for immediate live feel!
   useEffect(() => {
     fetchData();
+    if (user) {
+      fetchUserPortfolio();
+      fetchUserPredictions();
+    }
     
     pollTimerRef.current = setInterval(() => {
       fetchData();
       if (user) {
         fetchUserPortfolio();
+        fetchUserPredictions();
       }
     }, 4000);
 
@@ -340,28 +418,68 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* Markets Section Header */}
-                <div className="text-left space-y-1 border-b border-zinc-900 pb-4">
-                  <h3 className="text-base font-extrabold text-zinc-200">Active Prediction Contracts</h3>
-                  <p className="text-xs text-zinc-500 font-semibold">Select an outcome contract to evaluate, buy, or sell contracts using escrow cash</p>
+                {/* Visual Section Navigation */}
+                <div className="flex items-center gap-6 border-b border-zinc-900 pb-1">
+                  <button
+                    onClick={() => setMarketSubTab("contracts")}
+                    className={`pb-3 text-sm font-extrabold transition-all cursor-pointer border-b-2 px-1 ${
+                      marketSubTab === "contracts"
+                        ? "border-emerald-500 text-white"
+                        : "border-transparent text-zinc-500 hover:text-zinc-300"
+                    }`}
+                  >
+                    Prediction Contracts
+                  </button>
+                  <button
+                    onClick={() => setMarketSubTab("txodds")}
+                    className={`pb-3 text-sm font-extrabold transition-all cursor-pointer border-b-2 px-1 flex items-center gap-1.5 ${
+                      marketSubTab === "txodds"
+                        ? "border-emerald-500 text-white"
+                        : "border-transparent text-zinc-500 hover:text-zinc-300"
+                    }`}
+                  >
+                    TXODDS Real-Time Fixtures
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+                  </button>
                 </div>
 
-                {/* Grid */}
-                {markets.length === 0 ? (
-                  <div className="py-24 text-center">
-                    <Loader2 className="w-8 h-8 text-emerald-500 animate-spin mx-auto mb-3" />
-                    <p className="text-xs font-mono font-semibold text-zinc-500">Formulating active sports odds...</p>
-                  </div>
+                {marketSubTab === "contracts" ? (
+                  <>
+                    {/* Markets Section Header */}
+                    <div className="text-left space-y-1">
+                      <p className="text-xs text-zinc-500 font-semibold">Select an outcome contract to evaluate, buy, or sell contracts using escrow cash</p>
+                    </div>
+
+                    {/* Grid */}
+                    {markets.length === 0 ? (
+                      <div className="py-24 text-center">
+                        <Loader2 className="w-8 h-8 text-emerald-500 animate-spin mx-auto mb-3" />
+                        <p className="text-xs font-mono font-semibold text-zinc-500">Formulating active sports odds...</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {markets.map((market) => (
+                          <MarketCard
+                            key={market.id}
+                            market={market}
+                            onClick={() => setSelectedMarketId(market.id)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {markets.map((market) => (
-                      <MarketCard
-                        key={market.id}
-                        market={market}
-                        onClick={() => setSelectedMarketId(market.id)}
-                      />
-                    ))}
-                  </div>
+                  <TXODDSMatchesView
+                    matches={txoddsMatches}
+                    isLoading={isMatchesLoading}
+                    onSync={handleSyncTXODDS}
+                    onSelectMarket={(id) => {
+                      setSelectedMarketId(id);
+                    }}
+                    user={user}
+                    userPredictions={userPredictions}
+                    onPredict={handlePredict}
+                  />
                 )}
               </div>
             )}

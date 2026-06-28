@@ -64,3 +64,32 @@ export interface LeaderboardUser {
   netProfit: number;
   rank: number;
 }
+
+export interface TXODDSMatch {
+  id: string;
+  homeTeam: string;
+  awayTeam: string;
+  kickoff: string;
+  group: string;
+  status: "upcoming" | "live" | "completed";
+  homeOdds: number;
+  drawOdds: number;
+  awayOdds: number;
+  homeScore?: number;
+  awayScore?: number;
+  result?: "home_win" | "away_win" | "draw" | null;
+  lastUpdated: string;
+}
+
+export interface MatchPrediction {
+  id: string;
+  userId: string;
+  displayName: string;
+  matchId: string;
+  homeTeam: string;
+  awayTeam: string;
+  prediction: "yes" | "no";
+  kickoff: string;
+  status: "pending" | "correct" | "incorrect";
+  timestamp: string;
+}

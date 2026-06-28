@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import admin from "firebase-admin";
 import { GoogleGenAI } from "@google/genai";
 import { createServer as createViteServer } from "vite";
@@ -9,19 +10,44 @@ let useCloudFirestore = false;
 let db: any = null;
 
 try {
-  // If running on Cloud Run, it can initialize default credentials
-  admin.initializeApp();
-  db = admin.firestore();
-  useCloudFirestore = true;
-  console.log("Firebase Admin initialized successfully. Using Cloud Firestore.");
+  const configPath = path.join(process.cwd(), "firebase-applet-config.json");
+  let firebaseConfig: any = null;
+  if (fs.existsSync(configPath)) {
+    firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+  }
+
+  if (firebaseConfig && firebaseConfig.projectId) {
+    console.log(`Initializing Firebase Admin with Project: ${firebaseConfig.projectId}, Database ID: ${firebaseConfig.firestoreDatabaseId || "(default)"}`);
+    admin.initializeApp({
+      projectId: firebaseConfig.projectId,
+    });
+    
+    if (firebaseConfig.firestoreDatabaseId) {
+      db = admin.firestore(firebaseConfig.firestoreDatabaseId);
+    } else {
+      db = admin.firestore();
+    }
+    useCloudFirestore = true;
+    console.log("Firebase Admin initialized successfully using firebase-applet-config.json. Using Cloud Firestore.");
+  } else {
+    // Attempt default initialization if config is missing
+    admin.initializeApp();
+    db = admin.firestore();
+    useCloudFirestore = true;
+    console.log("Firebase Admin initialized successfully with default credentials. Using Cloud Firestore.");
+  }
 } catch (err) {
   console.warn("Firebase Admin failed to initialize. Falling back to robust In-Memory Database.", err);
+  useCloudFirestore = false;
+  db = null;
 }
 
 // In-Memory Database fallback structure for seamless previews
 const fallbackDb = {
   users: {} as Record<string, any>,
   markets: {} as Record<string, any>,
+  matches: {} as Record<string, any>,
+  predictions: {} as Record<string, any>,
   transactions: [] as any[],
   feed: [] as any[]
 };
@@ -95,6 +121,88 @@ DEFAULT_MARKETS.forEach(m => {
   fallbackDb.markets[m.id] = { ...m };
 });
 
+const DEFAULT_MATCHES = [
+  {
+    id: "match_1",
+    homeTeam: "Brazil",
+    awayTeam: "Argentina",
+    kickoff: "2026-07-12T21:00:00Z",
+    group: "Group A",
+    status: "completed",
+    homeOdds: 1.85,
+    drawOdds: 3.40,
+    awayOdds: 4.20,
+    homeScore: 2,
+    awayScore: 1,
+    result: "home_win",
+    lastUpdated: new Date().toISOString()
+  },
+  {
+    id: "match_2",
+    homeTeam: "France",
+    awayTeam: "England",
+    kickoff: "2026-07-18T18:00:00Z",
+    group: "Knockout Stage",
+    status: "upcoming",
+    homeOdds: 2.10,
+    drawOdds: 3.25,
+    awayOdds: 3.10,
+    homeScore: undefined,
+    awayScore: undefined,
+    result: null,
+    lastUpdated: new Date().toISOString()
+  },
+  {
+    id: "match_3",
+    homeTeam: "USA",
+    awayTeam: "Netherlands",
+    kickoff: "2026-07-10T19:00:00Z",
+    group: "Group B",
+    status: "live",
+    homeOdds: 2.80,
+    drawOdds: 3.10,
+    awayOdds: 2.45,
+    homeScore: 1,
+    awayScore: 1,
+    result: null,
+    lastUpdated: new Date().toISOString()
+  },
+  {
+    id: "match_4",
+    homeTeam: "Germany",
+    awayTeam: "Spain",
+    kickoff: "2026-07-15T20:00:00Z",
+    group: "Group C",
+    status: "upcoming",
+    homeOdds: 2.30,
+    drawOdds: 3.30,
+    awayOdds: 2.80,
+    homeScore: undefined,
+    awayScore: undefined,
+    result: null,
+    lastUpdated: new Date().toISOString()
+  },
+  {
+    id: "match_5",
+    homeTeam: "Portugal",
+    awayTeam: "Italy",
+    kickoff: "2026-07-16T17:00:00Z",
+    group: "Group D",
+    status: "upcoming",
+    homeOdds: 2.40,
+    drawOdds: 3.20,
+    awayOdds: 2.70,
+    homeScore: undefined,
+    awayScore: undefined,
+    result: null,
+    lastUpdated: new Date().toISOString()
+  }
+];
+
+DEFAULT_MATCHES.forEach(match => {
+  fallbackDb.matches[match.id] = { ...match };
+});
+
 fallbackDb.feed.push({
   id: "f1",
   type: "odds_update",
@@ -130,7 +238,487 @@ const startServer = async () => {
     return new GoogleGenAI({ apiKey: key });
   };
 
+  // --- TXODDS WORLD CUP DATA API INTEGRATION HELPERS ---
+
+  // Helper to automatically resolve prediction market when match is completed
+  const resolvePredictionMarketFromMatch = async (matchId: string, result: "home_win" | "away_win" | "draw") => {
+    try {
+      console.log(`Resolving prediction market from match outcome: ${matchId}, Result: ${result}`);
+      
+      // Match ID maps to Markets (e.g. match_1 -> m1, match_2 -> m2, match_3 -> m4)
+      const matchToMarketIdMap: Record<string, string> = {
+        "match_1": "m1",
+        "match_2": "m2", // France vs England
+        "match_3": "m4", // USA vs Netherlands
+      };
+
+      const marketId = matchToMarketIdMap[matchId];
+      if (!marketId) return;
+
+      if (useCloudFirestore) {
+        const marketRef = db.collection("markets").doc(marketId);
+        const marketSnap = await marketRef.get();
+        if (marketSnap.exists && marketSnap.data().status === "open") {
+          const outcome = result === "home_win" ? "yes" : "no";
+          await marketRef.update({
+            status: "resolved",
+            resolution: outcome
+          });
+
+          // Log to live feed
+          const feedRef = db.collection("feed").doc();
+          await feedRef.set({
+            id: feedRef.id,
+            marketId,
+            marketTitle: marketSnap.data().title,
+            type: "ai_insight",
+            message: `🏆 OFFICIAL SETTLEMENT: Match result confirmed! ${marketSnap.data().title} has been resolved to ${outcome.toUpperCase()}. Escrow contracts are now trade-liquid and settled.`,
+            timestamp: new Date().toISOString(),
+            author: "TXODDS Settlement Desk"
+          });
+        }
+      } else {
+        const market = fallbackDb.markets[marketId];
+        if (market && market.status === "open") {
+          const outcome = result === "home_win" ? "yes" : "no";
+          market.status = "resolved";
+          market.resolution = outcome;
+
+          fallbackDb.feed.unshift({
+            id: `f_resolve_${Date.now()}`,
+            marketId,
+            marketTitle: market.title,
+            type: "ai_insight",
+            message: `🏆 OFFICIAL SETTLEMENT: Match result confirmed! ${market.title} has been resolved to ${outcome.toUpperCase()}. Escrow contracts are now trade-liquid and settled.`,
+            timestamp: new Date().toISOString(),
+            author: "TXODDS Settlement Desk"
+          });
+        }
+      }
+    } catch (err) {
+      console.error("Failed to automatically resolve prediction market from match:", err);
+    }
+  };
+
+  // Helper to automatically resolve user predictions when a match is completed
+  const resolveUserPredictionsFromMatch = async (matchId: string, result: "home_win" | "away_win" | "draw") => {
+    try {
+      console.log(`Resolving user predictions for match ${matchId}, Result: ${result}`);
+      
+      if (useCloudFirestore) {
+        // Query predictions group in Firestore. Because it is a subcollection of users,
+        // collectionGroup allows finding all "predictions" documents.
+        const predictionsQuery = await db.collectionGroup("predictions").get();
+        const batch = db.batch();
+        let updatedCount = 0;
+
+        predictionsQuery.forEach((doc: any) => {
+          const pred = doc.data();
+          // We match the target matchId and only process pending ones
+          if (pred.matchId === matchId && pred.status === "pending") {
+            const isCorrect = (pred.prediction === "yes" && result === "home_win") ||
+                              (pred.prediction === "no" && result !== "home_win");
+            
+            const status = isCorrect ? "correct" : "incorrect";
+            batch.update(doc.ref, { status });
+            updatedCount++;
+
+            if (isCorrect) {
+              // Reward with $500 balance bonus!
+              const userRef = db.collection("users").doc(pred.userId);
+              batch.update(userRef, {
+                balance: admin.firestore.FieldValue.increment(500),
+                portfolioValue: admin.firestore.FieldValue.increment(500)
+              });
+
+              // Add success feed message
+              const feedRef = db.collection("feed").doc();
+              batch.set(feedRef, {
+                id: feedRef.id,
+                type: "odds_update",
+                message: `🎉 PREDICTION WINNER: @${pred.displayName || "Trader"} predicted the match outcome perfectly! +$500 cash credited!`,
+                timestamp: new Date().toISOString(),
+                author: "TXODDS Settlement Desk"
+              });
+            }
+          }
+        });
+
+        if (updatedCount > 0) {
+          await batch.commit();
+          console.log(`Successfully resolved ${updatedCount} user predictions in Firestore.`);
+        }
+      } else {
+        // Fallback Store Resolution
+        let updatedCount = 0;
+        Object.keys(fallbackDb.predictions).forEach((userId) => {
+          const userPreds = fallbackDb.predictions[userId];
+          if (userPreds && userPreds[matchId] && userPreds[matchId].status === "pending") {
+            const pred = userPreds[matchId];
+            const isCorrect = (pred.prediction === "yes" && result === "home_win") ||
+                              (pred.prediction === "no" && result !== "home_win");
+            
+            pred.status = isCorrect ? "correct" : "incorrect";
+            updatedCount++;
+
+            if (isCorrect) {
+              if (fallbackDb.users[userId]) {
+                fallbackDb.users[userId].balance += 500;
+                fallbackDb.users[userId].portfolioValue += 500;
+              }
+
+              fallbackDb.feed.unshift({
+                id: `f_pred_${Date.now()}`,
+                type: "odds_update",
+                message: `🎉 PREDICTION WINNER: @${pred.displayName || "Trader"} predicted the match outcome perfectly! +$500 cash credited!`,
+                timestamp: new Date().toISOString(),
+                author: "TXODDS Settlement Desk"
+              });
+            }
+          }
+        });
+        console.log(`Successfully resolved ${updatedCount} user predictions in fallback memory.`);
+      }
+    } catch (err) {
+      console.error("Failed to automatically resolve user predictions from match:", err);
+    }
+  };
+
+  // Helper to fetch live matches from TXODDS or fallback simulator
+  const syncTXODDSData = async () => {
+    const apiKey = process.env.TXODDS_API_KEY;
+    let fetchedMatches: any[] = [];
+
+    if (apiKey) {
+      try {
+        console.log("Attempting live connection to TXODDS API...");
+        const res = await fetch(`https://api.txodds.com/v1/fixtures?api_key=${apiKey}&league=world-cup-2026`, {
+          headers: { "Accept": "application/json" }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          fetchedMatches = (data.fixtures || []).map((f: any) => ({
+            id: f.id || `tx_${f.match_id}`,
+            homeTeam: f.home_team_name || f.homeTeam,
+            awayTeam: f.away_team_name || f.awayTeam,
+            kickoff: f.kickoff_time || f.date || new Date().toISOString(),
+            group: f.group_name || f.group || "Group Stage",
+            status: f.status === "FT" || f.status === "completed" ? "completed" : (f.status === "live" || f.status === "HT" ? "live" : "upcoming"),
+            homeOdds: Number(f.odds?.home || f.homeOdds || 2.0),
+            drawOdds: Number(f.odds?.draw || f.drawOdds || 3.0),
+            awayOdds: Number(f.odds?.away || f.awayOdds || 3.0),
+            homeScore: f.scores?.home !== undefined ? Number(f.scores.home) : undefined,
+            awayScore: f.scores?.away !== undefined ? Number(f.scores.away) : undefined,
+            result: f.result || (f.scores?.home > f.scores?.away ? "home_win" : f.scores?.home < f.scores?.away ? "away_win" : f.scores ? "draw" : null),
+            lastUpdated: new Date().toISOString()
+          }));
+        } else {
+          console.warn("TXODDS API server returned error status:", res.status);
+        }
+      } catch (err) {
+        console.error("TXODDS API connection error:", err);
+      }
+    }
+
+    // Fallback/Simulated sync if API isn't configured or failed to fetch
+    if (fetchedMatches.length === 0) {
+      console.log("Performing dynamic simulated TXODDS sync.");
+      // Read current matches
+      let currentMatches: any[] = [];
+      try {
+        if (useCloudFirestore) {
+          const snapshot = await db.collection("matches").get();
+          snapshot.forEach((doc: any) => {
+            currentMatches.push({ id: doc.id, ...doc.data() });
+          });
+        } else {
+          currentMatches = Object.values(fallbackDb.matches);
+        }
+      } catch (err) {
+        console.error("Failed to read matches collection, utilizing seeds:", err);
+      }
+
+      if (currentMatches.length === 0) {
+        currentMatches = JSON.parse(JSON.stringify(DEFAULT_MATCHES));
+      }
+
+      // Fluctuated or evolved states
+      fetchedMatches = currentMatches.map((match: any) => {
+        let status = match.status;
+        let homeOdds = Number(match.homeOdds || 2.00);
+        let drawOdds = Number(match.drawOdds || 3.00);
+        let awayOdds = Number(match.awayOdds || 3.00);
+        let homeScore = match.homeScore;
+        let awayScore = match.awayScore;
+        let result = match.result;
+
+        // If live, randomly update score or complete the match
+        if (status === "live") {
+          const rand = Math.random();
+          if (rand < 0.2) {
+            // GOAL!
+            homeScore = (homeScore !== undefined ? homeScore : 0) + (Math.random() > 0.5 ? 1 : 0);
+            awayScore = (awayScore !== undefined ? awayScore : 0) + (Math.random() > 0.5 ? 0 : 1);
+            // Adjust live odds dynamically based on new scores
+            homeOdds = Number(Math.max(1.10, homeOdds + (homeScore > awayScore ? -0.4 : 0.4)).toFixed(2));
+            awayOdds = Number(Math.max(1.10, awayOdds + (awayScore > homeScore ? -0.4 : 0.4)).toFixed(2));
+          } else if (rand < 0.35) {
+            // Complete the match
+            status = "completed";
+            result = homeScore! > awayScore! ? "home_win" : homeScore! < awayScore! ? "away_win" : "draw";
+            
+            // Auto resolve prediction market & user predictions!
+            resolvePredictionMarketFromMatch(match.id, result);
+            resolveUserPredictionsFromMatch(match.id, result);
+          }
+        } else if (status === "upcoming") {
+          // Subtle line adjustments
+          const change = (Math.random() * 0.30 - 0.15);
+          homeOdds = Number(Math.min(Math.max(homeOdds + change, 1.10), 8.0).toFixed(2));
+          awayOdds = Number(Math.min(Math.max(awayOdds - change, 1.10), 8.0).toFixed(2));
+          
+          // Small chance an upcoming match goes live!
+          if (Math.random() < 0.1) {
+            status = "live";
+            homeScore = 0;
+            awayScore = 0;
+          }
+        }
+
+        return {
+          ...match,
+          status,
+          homeOdds,
+          drawOdds,
+          awayOdds,
+          homeScore,
+          awayScore,
+          result,
+          lastUpdated: new Date().toISOString()
+        };
+      });
+    }
+
+    // Persist matches back to Firestore or in-memory fallback
+    try {
+      if (useCloudFirestore) {
+        const batch = db.batch();
+        fetchedMatches.forEach((m) => {
+          const docRef = db.collection("matches").doc(m.id);
+          batch.set(docRef, m, { merge: true });
+        });
+        await batch.commit();
+      } else {
+        fetchedMatches.forEach((m) => {
+          fallbackDb.matches[m.id] = m;
+        });
+      }
+    } catch (err) {
+      console.error("Failed to write synced matches to db, returning local copies:", err);
+    }
+
+    return fetchedMatches;
+  };
+
   // --- API ROUTES ---
+
+  // TXODDS Endpoint: Get all matches & schedule
+  app.get("/api/txodds/matches", async (req, res) => {
+    try {
+      let list: any[] = [];
+      if (useCloudFirestore) {
+        const snapshot = await db.collection("matches").get();
+        snapshot.forEach((doc: any) => {
+          list.push({ id: doc.id, ...doc.data() });
+        });
+
+        if (list.length === 0) {
+          // Sync/Seed on empty
+          list = await syncTXODDSData();
+        }
+      } else {
+        list = Object.values(fallbackDb.matches);
+        if (list.length === 0) {
+          list = await syncTXODDSData();
+        }
+      }
+      res.json(list);
+    } catch (err: any) {
+      console.error("TXODDS matches fetch failed:", err);
+      res.status(500).json({ error: "Failed to load TXODDS matches", details: err.message });
+    }
+  });
+
+  // TXODDS Endpoint: Trigger live sync
+  app.post("/api/txodds/sync", async (req, res) => {
+    try {
+      const synced = await syncTXODDSData();
+      res.json({ success: true, message: "TXODDS World Cup data feed synchronized successfully.", count: synced?.length || 0, matches: synced });
+    } catch (err: any) {
+      console.error("TXODDS sync endpoint failed:", err);
+      res.status(500).json({ error: "Failed to trigger TXODDS synchronization", details: err.message });
+    }
+  });
+
+  // TXODDS Endpoint: Get match results (completed matches)
+  app.get("/api/txodds/results", async (req, res) => {
+    try {
+      let list: any[] = [];
+      if (useCloudFirestore) {
+        const snapshot = await db.collection("matches").where("status", "==", "completed").get();
+        snapshot.forEach((doc: any) => {
+          list.push({ id: doc.id, ...doc.data() });
+        });
+      } else {
+        list = Object.values(fallbackDb.matches).filter((m: any) => m.status === "completed");
+      }
+      res.json(list);
+    } catch (err: any) {
+      console.error("TXODDS results fetch failed:", err);
+      res.status(500).json({ error: "Failed to fetch match results", details: err.message });
+    }
+  });
+
+  // TXODDS Endpoint: Submit a 'yes' or 'no' prediction for a match
+  app.post("/api/txodds/predict", async (req, res) => {
+    const { userId, matchId, prediction } = req.body;
+    
+    if (!userId || !matchId || !prediction) {
+      return res.status(400).json({ error: "Missing required prediction fields (userId, matchId, prediction)" });
+    }
+
+    if (prediction !== "yes" && prediction !== "no") {
+      return res.status(400).json({ error: "Prediction must be either 'yes' or 'no'" });
+    }
+
+    try {
+      let match: any = null;
+      let userDisplayName = "Trader";
+
+      // 1. Fetch user to verify they exist and get displayName
+      if (useCloudFirestore) {
+        const userSnap = await db.collection("users").doc(userId).get();
+        if (!userSnap.exists) {
+          return res.status(404).json({ error: "User ledger account not found" });
+        }
+        userDisplayName = userSnap.data()?.displayName || "Trader";
+      } else {
+        const localUser = fallbackDb.users[userId];
+        if (!localUser) {
+          return res.status(404).json({ error: "User ledger account not found" });
+        }
+        userDisplayName = localUser.displayName || "Trader";
+      }
+
+      // 2. Fetch match to verify kickoff time and status
+      if (useCloudFirestore) {
+        const matchSnap = await db.collection("matches").doc(matchId).get();
+        if (!matchSnap.exists) {
+          return res.status(404).json({ error: "Match fixture not found" });
+        }
+        match = matchSnap.data();
+      } else {
+        match = fallbackDb.matches[matchId];
+        if (!match) {
+          return res.status(404).json({ error: "Match fixture not found" });
+        }
+      }
+
+      // 3. SECURE TIME-BOUND CHECK: Ensure prediction is placed strictly BEFORE match kickoff
+      const kickoffTime = new Date(match.kickoff).getTime();
+      const currentTime = Date.now();
+
+      if (match.status !== "upcoming" || currentTime >= kickoffTime) {
+        return res.status(400).json({ 
+          error: "Prediction window closed. This match has already commenced, is live, or completed." 
+        });
+      }
+
+      const predictionObj = {
+        id: `${userId}_${matchId}`,
+        userId,
+        displayName: userDisplayName,
+        matchId,
+        homeTeam: match.homeTeam,
+        awayTeam: match.awayTeam,
+        prediction, // "yes" or "no"
+        kickoff: match.kickoff,
+        status: "pending", // "pending" | "correct" | "incorrect"
+        timestamp: new Date().toISOString()
+      };
+
+      // 4. Save prediction
+      if (useCloudFirestore) {
+        const predRef = db.collection("users").doc(userId).collection("predictions").doc(matchId);
+        await predRef.set(predictionObj);
+      } else {
+        if (!fallbackDb.predictions[userId]) {
+          fallbackDb.predictions[userId] = {};
+        }
+        fallbackDb.predictions[userId][matchId] = predictionObj;
+      }
+
+      // Dispatch real-time live feed item for prediction submission!
+      const feedMessage = `🔮 NEW PREDICTION: @${userDisplayName} predicted ${prediction === "yes" ? "YES (Win)" : "NO (Draw/Loss)"} for ${match.homeTeam} vs ${match.awayTeam}.`;
+      if (useCloudFirestore) {
+        const feedRef = db.collection("feed").doc();
+        await feedRef.set({
+          id: feedRef.id,
+          type: "odds_update",
+          message: feedMessage,
+          timestamp: new Date().toISOString(),
+          author: "Prediction Engine"
+        });
+      } else {
+        fallbackDb.feed.unshift({
+          id: `f_pred_submit_${Date.now()}`,
+          type: "odds_update",
+          message: feedMessage,
+          timestamp: new Date().toISOString(),
+          author: "Prediction Engine"
+        });
+      }
+
+      return res.json({ 
+        success: true, 
+        message: "Your time-bound match prediction has been successfully recorded on the ledger.",
+        prediction: predictionObj 
+      });
+
+    } catch (err: any) {
+      console.error("Failed to submit prediction:", err);
+      return res.status(500).json({ error: "Internal server error submitting prediction", details: err.message });
+    }
+  });
+
+  // TXODDS Endpoint: Fetch all match predictions for a specific user
+  app.get("/api/txodds/user-predictions/:userId", async (req, res) => {
+    const { userId } = req.params;
+    if (!userId) {
+      return res.status(400).json({ error: "Missing userId parameter" });
+    }
+
+    try {
+      const list: any[] = [];
+      if (useCloudFirestore) {
+        const snapshot = await db.collection("users").doc(userId).collection("predictions").get();
+        snapshot.forEach((doc: any) => {
+          list.push(doc.data());
+        });
+      } else {
+        const userPreds = fallbackDb.predictions[userId];
+        if (userPreds) {
+          Object.values(userPreds).forEach((pred: any) => {
+            list.push(pred);
+          });
+        }
+      }
+      return res.json(list);
+    } catch (err: any) {
+      console.error("Failed to fetch user predictions:", err);
+      return res.status(500).json({ error: "Failed to load user predictions", details: err.message });
+    }
+  });
 
   // 1. Ledger Sync Endpoint
   app.post("/api/auth/register-ledger", async (req, res) => {
