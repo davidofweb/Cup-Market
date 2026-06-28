@@ -1,13 +1,13 @@
 import React, { useState } from "react";
 import { 
   Radio, 
-  Sparkles, 
   Send, 
   User as UserIcon, 
   Zap, 
   MessageSquare,
   Globe,
-  Clock
+  Clock,
+  TrendingUp
 } from "lucide-react";
 import { FeedItem } from "../types";
 
@@ -54,8 +54,8 @@ export default function LiveFeed({ feedItems, onSendMessage }: LiveFeedProps) {
         );
       case "ai_insight":
         return (
-          <div className="w-7 h-7 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center shrink-0 text-purple-400">
-            <Sparkles className="w-3.5 h-3.5 fill-purple-400" />
+          <div className="w-7 h-7 rounded-lg bg-zinc-800/80 border border-zinc-700/50 flex items-center justify-center shrink-0 text-zinc-100">
+            <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
           </div>
         );
       case "chat":
@@ -88,7 +88,7 @@ export default function LiveFeed({ feedItems, onSendMessage }: LiveFeedProps) {
           {[
             { id: "all", label: "All Logs" },
             { id: "odds", label: "Match Feeds" },
-            { id: "ai", label: "Gemini Insights" },
+            { id: "ai", label: "Quant Insights" },
             { id: "chat", label: "Public Chat" }
           ].map((tab) => (
             <button

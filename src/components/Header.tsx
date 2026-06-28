@@ -7,7 +7,6 @@ import {
   Trophy, 
   Zap, 
   Radio, 
-  Sparkles,
   Award
 } from "lucide-react";
 import { CustomUser } from "../types";

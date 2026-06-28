@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { 
   ArrowLeft, 
-  Sparkles, 
   Zap, 
   TrendingUp, 
   ShieldCheck, 
@@ -167,18 +166,16 @@ export default function MarketDetail({
             </div>
           )}
 
-          {/* Gemini AI Fan Hype and Analytics */}
-          <div className="bg-purple-950/5 border border-purple-500/20 rounded-3xl p-6 space-y-5 relative overflow-hidden shadow-xl">
-            <div className="absolute top-0 right-0 w-24 h-24 bg-purple-500/5 rounded-full blur-2xl -z-10"></div>
-            
-            <div className="flex items-center justify-between border-b border-purple-500/10 pb-4">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center border border-purple-500/20">
-                  <Sparkles className="w-4 h-4 text-purple-400 fill-purple-400 animate-pulse" />
+          {/* Quant Risk & Probability Index */}
+          <div className="bg-zinc-900/10 border border-zinc-850 rounded-2xl p-6 space-y-5 relative overflow-hidden">
+            <div className="flex items-center justify-between border-b border-zinc-850 pb-4">
+              <div className="flex items-center gap-2.5 text-left">
+                <div className="w-8 h-8 rounded-lg bg-zinc-900 flex items-center justify-center border border-zinc-800">
+                  <TrendingUp className="w-4 h-4 text-emerald-400" />
                 </div>
                 <div>
-                  <h4 className="text-xs font-black text-white uppercase tracking-wider">Gemini Hype Insight</h4>
-                  <span className="text-[9px] text-purple-400 font-mono font-bold uppercase">Real-Time Sentiment Engine</span>
+                  <h4 className="text-xs font-black text-white uppercase tracking-wider">Quant Risk & Probability</h4>
+                  <span className="text-[9px] text-zinc-500 font-mono font-bold uppercase">Dynamic Volatility Index</span>
                 </div>
               </div>
 
@@ -186,17 +183,17 @@ export default function MarketDetail({
                 id="generate-ai-insight"
                 onClick={onGenerateAIAnalysis}
                 disabled={isGeneratingAI}
-                className="px-3.5 py-1.5 bg-purple-500 hover:bg-purple-400 disabled:opacity-50 text-zinc-950 text-[10px] font-mono font-black uppercase rounded-lg transition-all flex items-center gap-1.5 shadow-md shadow-purple-500/10 cursor-pointer"
+                className="px-3.5 py-1.5 bg-zinc-100 hover:bg-white disabled:opacity-50 text-zinc-950 text-[10px] font-mono font-black uppercase rounded-lg transition-all flex items-center gap-1.5 cursor-pointer border border-zinc-200"
               >
                 {isGeneratingAI ? (
                   <>
                     <div className="w-3.5 h-3.5 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin"></div>
-                    <span>ANALYZING...</span>
+                    <span>CALCULATING...</span>
                   </>
                 ) : (
                   <>
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>REFRESH ANALYSIS</span>
+                    <Zap className="w-3.5 h-3.5 fill-current" />
+                    <span>REFRESH PROBABILITIES</span>
                   </>
                 )}
               </button>
@@ -208,10 +205,10 @@ export default function MarketDetail({
               </p>
             ) : (
               <div className="py-6 text-center space-y-3">
-                <HelpCircle className="w-8 h-8 text-purple-500/50 mx-auto" />
+                <HelpCircle className="w-8 h-8 text-zinc-700 mx-auto" />
                 <div className="space-y-1">
-                  <p className="text-xs text-zinc-400 font-semibold">No active sentiment report has been formulated yet.</p>
-                  <p className="text-[10px] text-zinc-600 font-medium">Trigger Gemini to parse latest fan tweets, squad injury lists and squad news.</p>
+                  <p className="text-xs text-zinc-400 font-semibold">No active quantitative model has been generated yet.</p>
+                  <p className="text-[10px] text-zinc-600 font-medium">Re-calibrate mathematical probability delta based on active order books and TXODDS fixtures.</p>
                 </div>
               </div>
             )}

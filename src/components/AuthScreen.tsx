@@ -7,7 +7,7 @@ import {
   signInAnonymously,
   updateProfile
 } from "firebase/auth";
-import { ShieldCheck, UserPlus, LogIn, Sparkles, Trophy, Wallet, Zap, Globe } from "lucide-react";
+import { ShieldCheck, UserPlus, LogIn, Trophy, Wallet, Zap, Globe, TrendingUp } from "lucide-react";
 
 interface AuthScreenProps {
   onSuccess: (user: any) => void;
@@ -74,7 +74,7 @@ export default function AuthScreen({ onSuccess }: AuthScreenProps) {
   };
 
   return (
-    <div id="auth-screen" className="min-h-screen flex items-center justify-center bg-[#09090b] px-4 py-12 relative overflow-hidden">
+    <div id="auth-screen" className="min-h-screen flex items-center justify-center bg-[#000000] px-4 py-12 relative overflow-hidden">
       {/* Visual background accents */}
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl -z-10 animate-pulse"></div>
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl -z-10"></div>
@@ -112,12 +112,12 @@ export default function AuthScreen({ onSuccess }: AuthScreenProps) {
             </div>
 
             <div className="p-4 bg-zinc-900/50 border border-zinc-800/80 rounded-2xl flex gap-3.5">
-              <div className="w-10 h-10 shrink-0 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
-                <Sparkles className="w-5 h-5 text-purple-400" />
+              <div className="w-10 h-10 shrink-0 rounded-xl bg-zinc-800 border border-zinc-750 flex items-center justify-center">
+                <TrendingUp className="w-5 h-5 text-emerald-400" />
               </div>
               <div>
-                <h4 className="text-sm font-bold text-zinc-200">AI Hype Analytics</h4>
-                <p className="text-xs text-zinc-500 mt-1 font-medium">Gemini analyses fan hype, team sheets, and news to generate predictions.</p>
+                <h4 className="text-sm font-bold text-zinc-200">Advanced Quant Models</h4>
+                <p className="text-xs text-zinc-500 mt-1 font-medium">Mathematical delta index analyzes contract trends and implied bookmaker probabilities.</p>
               </div>
             </div>
 

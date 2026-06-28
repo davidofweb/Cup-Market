@@ -207,7 +207,7 @@ export default function App() {
     }
   };
 
-  // Run data polling every 4 seconds for immediate live feel!
+  // Run data polling every 8 seconds to balance performance and immediate updates
   useEffect(() => {
     fetchData();
     if (user) {
@@ -221,7 +221,7 @@ export default function App() {
         fetchUserPortfolio();
         fetchUserPredictions();
       }
-    }, 4000);
+    }, 8000);
 
     return () => clearInterval(pollTimerRef.current);
   }, [user]);
@@ -306,12 +306,12 @@ export default function App() {
     }
   };
 
-  // 6. Formulate Gemini AI report
-  const handleGenerateAIAnalysis = async () => {
+  // 6. Formulate Quantitative metrics report
+  const handleGenerateQuantAnalysis = async () => {
     if (!selectedMarketId) return;
     setIsGeneratingAI(true);
     try {
-      const response = await fetch(`/api/markets/${selectedMarketId}/ai-analyze`, {
+      const response = await fetch(`/api/markets/${selectedMarketId}/quant-analyze`, {
         method: "POST"
       });
       if (response.ok) {
@@ -320,7 +320,7 @@ export default function App() {
         setMarkets(prev => prev.map(m => m.id === selectedMarketId ? { ...m, aiAnalysis: data.analysis } : m));
       }
     } catch (err) {
-      console.error("AI formulation failed:", err);
+      console.error("Quantitative formulation failed:", err);
     } finally {
       setIsGeneratingAI(false);
     }
@@ -346,7 +346,7 @@ export default function App() {
   // Render Loading Overlay
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[#09090b] text-zinc-300">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#000000] text-zinc-300">
         <Loader2 className="w-10 h-10 text-emerald-500 animate-spin mb-4" />
         <p className="text-xs font-mono font-black uppercase tracking-widest text-zinc-500">Syncing Ledger Exchange...</p>
       </div>
@@ -362,7 +362,7 @@ export default function App() {
   const existingPosition = positions.find(p => p.marketId === selectedMarketId);
 
   return (
-    <div className="min-h-screen bg-[#09090b] text-zinc-50 flex flex-col selection:bg-emerald-500 selection:text-zinc-950">
+    <div className="min-h-screen bg-[#000000] text-zinc-50 flex flex-col selection:bg-emerald-500 selection:text-zinc-950">
       
       {/* Header */}
       <Header
@@ -389,7 +389,7 @@ export default function App() {
             onBack={() => setSelectedMarketId(null)}
             onTrade={handleTrade}
             isGeneratingAI={isGeneratingAI}
-            onGenerateAIAnalysis={handleGenerateAIAnalysis}
+            onGenerateAIAnalysis={handleGenerateQuantAnalysis}
           />
         ) : (
           <>

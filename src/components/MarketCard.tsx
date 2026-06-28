@@ -1,5 +1,5 @@
 import React from "react";
-import { TrendingUp, Users, Calendar, Sparkles, ChevronRight, Zap } from "lucide-react";
+import { TrendingUp, Users, Calendar, ChevronRight, Zap } from "lucide-react";
 import { Market } from "../types";
 
 interface MarketCardProps {
@@ -39,7 +39,7 @@ export default function MarketCard({ market, onClick }: MarketCardProps) {
     <div
       id={`market-card-${market.id}`}
       onClick={onClick}
-      className="bg-zinc-900/40 border border-zinc-800/80 hover:border-zinc-700/60 rounded-2xl p-5 hover:bg-zinc-900/60 transition-all duration-300 shadow-lg group cursor-pointer flex flex-col justify-between h-[230px] relative overflow-hidden"
+      className="bg-zinc-900/40 border border-zinc-850 hover:border-zinc-700 rounded-2xl p-5 hover:bg-zinc-900/60 transition-all duration-300 shadow-lg group cursor-pointer flex flex-col justify-between min-h-[230px] h-full relative overflow-hidden"
     >
       {/* Decorative hover glow */}
       <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/2 rounded-full blur-xl -z-10 group-hover:bg-emerald-500/5 transition-all duration-300"></div>
@@ -59,9 +59,9 @@ export default function MarketCard({ market, onClick }: MarketCardProps) {
               </span>
             )}
             {market.aiAnalysis && (
-              <span className="flex items-center gap-1 text-[9px] font-mono font-extrabold text-purple-400 border border-purple-500/20 bg-purple-500/5 px-2 py-0.5 rounded shadow-sm">
-                <Sparkles className="w-3 h-3 fill-purple-400" />
-                <span>AI</span>
+              <span className="flex items-center gap-1 text-[9px] font-mono font-extrabold text-zinc-300 border border-zinc-700/50 bg-zinc-800/80 px-2 py-0.5 rounded shadow-sm">
+                <TrendingUp className="w-3 h-3 text-emerald-400" />
+                <span>QUANT</span>
               </span>
             )}
           </div>

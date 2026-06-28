@@ -7,7 +7,7 @@
 }
 
 body {
-  background-color: #09090b; /* zinc-950 */
+  background-color: #000000;
   color: #fafafa; /* zinc-50 */
   font-family: var(--font-sans);
 }
@@ -19,7 +19,7 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #09090b;
+  background: #000000;
 }
 
 ::-webkit-scrollbar-thumb {
