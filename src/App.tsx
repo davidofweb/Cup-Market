@@ -318,7 +318,7 @@ export default function App() {
     }
   };
 
-  // Run data polling every 8 seconds to balance performance and immediate updates
+  // Run data polling every 4 seconds to balance performance and immediate updates
   useEffect(() => {
     fetchData();
     if (user) {
@@ -332,7 +332,7 @@ export default function App() {
         fetchUserPortfolio();
         fetchUserPredictions();
       }
-    }, 8000);
+    }, 4000);
 
     return () => clearInterval(pollTimerRef.current);
   }, [user]);
