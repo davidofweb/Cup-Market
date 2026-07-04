@@ -17,7 +17,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           accentColor: '#10b981', // emerald-500
           showWalletLoginFirst: false,
         },
-        loginMethods: ['email', 'wallet', 'google', 'twitter', 'github'],
+        loginMethods: ['email', 'google', 'twitter', 'github'],
         embeddedWallets: {
           createOnLogin: 'users-without-wallets',
         },

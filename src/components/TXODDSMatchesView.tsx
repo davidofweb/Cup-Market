@@ -41,6 +41,113 @@ export default function TXODDSMatchesView({
   const [error, setError] = useState<string | null>(null);
   const [predictingId, setPredictingId] = useState<string | null>(null);
 
+  const prevMatchesRef = React.useRef<TXODDSMatch[]>([]);
+  const [oddsTrends, setOddsTrends] = useState<Record<string, {
+    home: "up" | "down" | "stable",
+    draw: "up" | "down" | "stable",
+    away: "up" | "down" | "stable",
+    lastChanged: { home: number, draw: number, away: number }
+  }>>({});
+
+  React.useEffect(() => {
+    if (!matches || matches.length === 0) return;
+    
+    const newTrends = { ...oddsTrends };
+    let hasChanges = false;
+
+    matches.forEach(match => {
+      const prevMatch = prevMatchesRef.current.find(m => m.id === match.id);
+      if (prevMatch) {
+        const homeTrend = match.homeOdds > prevMatch.homeOdds ? "up" : match.homeOdds < prevMatch.homeOdds ? "down" : (oddsTrends[match.id]?.home || "stable");
+        const drawTrend = match.drawOdds > prevMatch.drawOdds ? "up" : match.drawOdds < prevMatch.drawOdds ? "down" : (oddsTrends[match.id]?.draw || "stable");
+        const awayTrend = match.awayOdds > prevMatch.awayOdds ? "up" : match.awayOdds < prevMatch.awayOdds ? "down" : (oddsTrends[match.id]?.away || "stable");
+
+        const lastChanged = oddsTrends[match.id] ? { ...oddsTrends[match.id].lastChanged } : { home: 0, draw: 0, away: 0 };
+        const now = Date.now();
+
+        if (match.homeOdds !== prevMatch.homeOdds) {
+          lastChanged.home = now;
+          hasChanges = true;
+        }
+        if (match.drawOdds !== prevMatch.drawOdds) {
+          lastChanged.draw = now;
+          hasChanges = true;
+        }
+        if (match.awayOdds !== prevMatch.awayOdds) {
+          lastChanged.away = now;
+          hasChanges = true;
+        }
+
+        newTrends[match.id] = {
+          home: homeTrend,
+          draw: drawTrend,
+          away: awayTrend,
+          lastChanged
+        };
+      } else {
+        if (!newTrends[match.id]) {
+          newTrends[match.id] = {
+            home: "stable",
+            draw: "stable",
+            away: "stable",
+            lastChanged: { home: 0, draw: 0, away: 0 }
+          };
+          hasChanges = true;
+        }
+      }
+    });
+
+    prevMatchesRef.current = matches;
+    if (hasChanges) {
+      setOddsTrends(newTrends);
+    }
+  }, [matches]);
+
+  const renderOddsWithTrend = (matchId: string, type: "home" | "draw" | "away", currentOdds: number) => {
+    const trendObj = oddsTrends[matchId];
+    const trend = trendObj ? trendObj[type] : "stable";
+    const lastChanged = trendObj ? trendObj.lastChanged[type] : 0;
+    const isRecent = Date.now() - lastChanged < 5000;
+
+    let colorClass = "text-emerald-400";
+    let bgClass = "bg-zinc-900/60 border-zinc-800/80";
+    let arrow = null;
+
+    if (trend === "up") {
+      colorClass = isRecent ? "text-emerald-300 font-extrabold" : "text-emerald-400";
+      bgClass = isRecent 
+        ? "bg-emerald-950/40 border-emerald-500/40 text-emerald-300 animate-pulse transition-all duration-300" 
+        : "bg-zinc-900/60 border-zinc-800/80";
+      arrow = <span className="text-emerald-400 text-[10px] font-sans">▲</span>;
+    } else if (trend === "down") {
+      colorClass = isRecent ? "text-rose-300 font-extrabold" : "text-emerald-400";
+      bgClass = isRecent 
+        ? "bg-rose-950/40 border-rose-500/40 text-rose-300 animate-pulse transition-all duration-300" 
+        : "bg-zinc-900/60 border-zinc-800/80";
+      arrow = <span className="text-rose-400 text-[10px] font-sans">▼</span>;
+    }
+
+    return (
+      <div className={`p-2.5 rounded-xl border text-center transition-all duration-500 relative ${bgClass}`}>
+        <span className="text-[9px] font-mono text-zinc-500 uppercase block font-bold">
+          {type === "home" ? "1 (Home)" : type === "draw" ? "X (Draw)" : "2 (Away)"}
+        </span>
+        <div className="flex items-center justify-center gap-1.5 mt-0.5">
+          <span className={`text-xs font-black font-mono ${colorClass}`}>
+            {currentOdds.toFixed(2)}
+          </span>
+          {arrow}
+        </div>
+        {isRecent && (
+          <span className="absolute -top-1 -right-1 flex h-2 w-2">
+            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${trend === "up" ? "bg-emerald-400" : "bg-rose-400"}`}></span>
+            <span className={`relative inline-flex rounded-full h-2 w-2 ${trend === "up" ? "bg-emerald-500" : "bg-rose-500"}`}></span>
+          </span>
+        )}
+      </div>
+    );
+  };
+
   const handleSyncClick = async () => {
     setIsSyncing(true);
     setError(null);
@@ -267,29 +374,9 @@ export default function TXODDSMatchesView({
                     </span>
 
                     <div className="grid grid-cols-3 gap-2">
-                      {/* Home odds */}
-                      <div className="bg-zinc-900/60 p-2 rounded-xl border border-zinc-800/80 text-center">
-                        <span className="text-[9px] font-mono text-zinc-500 uppercase block font-bold">1 (Home)</span>
-                        <span className="text-xs font-black text-emerald-400 font-mono mt-0.5 block">
-                          {match.homeOdds.toFixed(2)}
-                        </span>
-                      </div>
-
-                      {/* Draw odds */}
-                      <div className="bg-zinc-900/60 p-2 rounded-xl border border-zinc-800/80 text-center">
-                        <span className="text-[9px] font-mono text-zinc-500 uppercase block font-bold">X (Draw)</span>
-                        <span className="text-xs font-black text-emerald-400 font-mono mt-0.5 block">
-                          {match.drawOdds.toFixed(2)}
-                        </span>
-                      </div>
-
-                      {/* Away odds */}
-                      <div className="bg-zinc-900/60 p-2 rounded-xl border border-zinc-800/80 text-center">
-                        <span className="text-[9px] font-mono text-zinc-500 uppercase block font-bold">2 (Away)</span>
-                        <span className="text-xs font-black text-emerald-400 font-mono mt-0.5 block">
-                          {match.awayOdds.toFixed(2)}
-                        </span>
-                      </div>
+                      {renderOddsWithTrend(match.id, "home", match.homeOdds)}
+                      {renderOddsWithTrend(match.id, "draw", match.drawOdds)}
+                      {renderOddsWithTrend(match.id, "away", match.awayOdds)}
                     </div>
                   </div>
 
